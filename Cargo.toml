@@ -1,0 +1,8 @@
+[package]
+name = "hyperfs"
+version = "1.0.0"
+authors = ["Thayne McCombs <astrothayne@gmail.com>"]
+
+[dependencies.hyper]
+version = "0.6.13"
+default-features = false
