@@ -1,6 +1,7 @@
 extern crate hyper;
 
 use std::io;
+use std::io::Write;
 use std::fs::File;
 use std::path::Path;
 
@@ -13,13 +14,34 @@ use hyper::header::ContentLength;
 use hyper::net::Fresh;
 use hyper::uri::RequestUri::AbsolutePath;
 
+macro_rules! println_err {
+    ($fmt: expr, $($arg:tt)*) => {
+        match writeln!(&mut std::io::stderr(), $fmt,  $($arg)*) {
+            Ok(_) => {},
+            Err(_) => {}
+        }
+    };
+}
+
+macro_rules! try_return {
+    ($e: expr) => {{
+        match $e {
+            Ok(v) => v,
+            Err(e) => {
+                println_err!("Error: {}", e);
+                return;
+            }
+        }
+    }}
+}
+
 fn handle_request(req: Request, mut resp: Response<Fresh>) {
     if let AbsolutePath(abs_path) = req.uri {
         if let Ok(file) = File::open(extract_path(&abs_path)) {
-            file_response(file, resp).unwrap();
+            try_return!(file_response(file, resp));
         } else {
             *resp.status_mut() = hyper::NotFound;
-            resp.send(b"<h1>Not Found</h1>").unwrap();
+            try_return!(resp.send(b"<h1>Not Found</h1>"));
         }
     }
 }
@@ -48,7 +70,8 @@ fn main() {
             server.handle(handle_request).unwrap();
         },
         Err(error) => {
-            panic!("Unable to start server: {}", error);
+            println_err!("Unable to start server: {}", error);
+            std::process::exit(1);
         }
     }
 }
