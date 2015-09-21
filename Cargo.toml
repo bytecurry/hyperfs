@@ -1,6 +1,6 @@
 [package]
 name = "hyperfs"
-version = "1.0.0"
+version = "1.1.0"
 authors = ["Thayne McCombs <astrothayne@gmail.com>"]
 
 [dependencies.hyper]
