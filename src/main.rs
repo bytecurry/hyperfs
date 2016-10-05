@@ -13,6 +13,7 @@ use hyper::server::Response;
 use hyper::header::ContentLength;
 use hyper::net::Fresh;
 use hyper::uri::RequestUri::AbsolutePath;
+use hyper::status::StatusCode::NotFound;
 
 macro_rules! println_err {
     ($fmt: expr, $($arg:tt)*) => {
@@ -23,33 +24,33 @@ macro_rules! println_err {
     };
 }
 
-macro_rules! try_return {
-    ($e: expr) => {{
-        match $e {
-            Ok(v) => v,
-            Err(e) => {
-                println_err!("Error: {}", e);
-                return;
-            }
-        }
-    }}
-}
-
-fn handle_request(req: Request, mut resp: Response<Fresh>) {
-    if let AbsolutePath(abs_path) = req.uri {
-        if let Ok(file) = File::open(extract_path(&abs_path)) {
-            try_return!(file_response(file, resp));
+fn handle_request(req: Request, resp: Response<Fresh>) {
+    let result = match req.uri {
+        AbsolutePath(abs_path) => if let Ok(file) = File::open(extract_path(&abs_path)) {
+            file_response(file, resp)
         } else {
-            *resp.status_mut() = hyper::NotFound;
-            try_return!(resp.send(b"<h1>Not Found</h1>"));
-        }
-    }
+            not_found(resp)
+        },
+        _ => not_found(resp)
+    };
+    match result {
+        Err(e) => println_err!("Error: {}", e),
+        _ => {}
+    };
 }
 
-fn file_response(mut file: File, mut resp: Response<Fresh>) -> io::Result<u64> {
+fn file_response(mut file: File, mut resp: Response<Fresh>) -> io::Result<()> {
     let metadata = try!(file.metadata());
     resp.headers_mut().set(ContentLength(metadata.len()));
-    resp.start().and_then(|mut res| io::copy(&mut file, &mut res))
+    resp.start().and_then(|mut res| {
+        try!(io::copy(&mut file, &mut res));
+        res.end()
+    })
+}
+
+fn not_found(mut resp: Response<Fresh>) -> io::Result<()> {
+    *resp.status_mut() = NotFound;
+    resp.send(b"<h1>Not Found</h1>")
 }
 
 fn extract_path(uri: &String) -> &Path {
