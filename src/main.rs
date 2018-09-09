@@ -1,78 +1,73 @@
+extern crate bytes;
+extern crate futures;
+extern crate http;
 extern crate hyper;
+extern crate tokio;
 
-use std::io;
-use std::io::Write;
-use std::fs::File;
-use std::path::Path;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 
-use std::net::{Ipv4Addr, SocketAddrV4};
+use futures::Future;
+use hyper::rt;
+use hyper::service::service_fn;
+use hyper::StatusCode;
+use hyper::{Body, Chunk, Request, Response, Server};
+use tokio::codec::{Decoder, FramedRead};
+use tokio::fs::File;
+use tokio::io;
 
-use hyper::Server;
-use hyper::server::Request;
-use hyper::server::Response;
-use hyper::header::ContentLength;
-use hyper::net::Fresh;
-use hyper::uri::RequestUri::AbsolutePath;
-use hyper::status::StatusCode::NotFound;
-
-macro_rules! println_err {
-    ($fmt: expr, $($arg:tt)*) => {
-        match writeln!(&mut std::io::stderr(), $fmt,  $($arg)*) {
-            Ok(_) => {},
-            Err(_) => {}
-        }
-    };
+fn handle_request(req: Request<Body>) -> impl Future<Item = Response<Body>, Error = http::Error> {
+    File::open(extract_path(&req))
+        .map(file_response)
+        .or_else(|_| status_response(StatusCode::NOT_FOUND))
 }
 
-fn handle_request(req: Request, resp: Response<Fresh>) {
-    let result = match req.uri {
-        AbsolutePath(abs_path) => if let Ok(file) = File::open(extract_path(&abs_path)) {
-            file_response(file, resp)
+fn file_response(file: File) -> Response<Body> {
+    let stream = FramedRead::new(file, ChunkDecoder);
+    Response::new(Body::wrap_stream(stream))
+}
+
+fn status_response(status: StatusCode) -> http::Result<Response<Body>> {
+    Response::builder().status(status).body(Body::empty())
+}
+
+fn extract_path(req: &Request<Body>) -> PathBuf {
+    // Remove the first character
+    PathBuf::from(req.uri().path().trim_left_matches('/'))
+}
+
+struct ChunkDecoder;
+
+impl Decoder for ChunkDecoder {
+    type Item = Chunk;
+    type Error = io::Error;
+
+    fn decode(&mut self, buf: &mut bytes::BytesMut) -> Result<Option<Chunk>, io::Error> {
+        let len = buf.len();
+        if len > 0 {
+            Ok(Some(buf.take().freeze().into()))
         } else {
-            not_found(resp)
-        },
-        _ => not_found(resp)
-    };
-    match result {
-        Err(e) => println_err!("Error: {}", e),
-        _ => {}
-    };
-}
-
-fn file_response(mut file: File, mut resp: Response<Fresh>) -> io::Result<()> {
-    let metadata = try!(file.metadata());
-    resp.headers_mut().set(ContentLength(metadata.len()));
-    resp.start().and_then(|mut res| {
-        try!(io::copy(&mut file, &mut res));
-        res.end()
-    })
-}
-
-fn not_found(mut resp: Response<Fresh>) -> io::Result<()> {
-    *resp.status_mut() = NotFound;
-    resp.send(b"<h1>Not Found</h1>")
-}
-
-fn extract_path(uri: &String) -> &Path {
-    let first_question = uri.find('?').unwrap_or(uri.len());
-    let slice = &uri[1 .. first_question];
-    Path::new(slice)
+            Ok(None)
+        }
+    }
 }
 
 fn main() {
-    let ip = Ipv4Addr::new(127, 0, 0, 1);
-    let port = std::env::args().nth(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(3000);
+    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    let port = std::env::args()
+        .nth(1)
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(3000);
 
-    let addr = SocketAddrV4::new(ip, port);
+    let addr = SocketAddr::new(ip, port);
 
-    match Server::http(addr) {
-        Ok(server) => {
-            println!("Server is listening at http://{}", addr);
-            server.handle(handle_request).unwrap();
-        },
-        Err(error) => {
-            println_err!("Unable to start server: {}", error);
-            std::process::exit(1);
-        }
-    }
+    let server = Server::bind(&addr)
+        .serve(|| service_fn(handle_request))
+        .map_err(|e| {
+            eprintln!("Unable to start server: {}", e);
+        });
+
+    println!("Server is listening at http://{}", addr);
+
+    rt::run(server);
 }

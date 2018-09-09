@@ -1,8 +1,19 @@
 [package]
 name = "hyperfs"
-version = "1.1.0"
+description = "A simple HTTP server for static files"
+version = "2.0.0"
 authors = ["Thayne McCombs <astrothayne@gmail.com>"]
+license = "MIT"
+license-file = "LICENSE"
+repository = "https:://github.com/tmccombs/hyperfs"
 
-[dependencies.hyper]
-version = "0.9.10"
-default-features = false
+[dependencies]
+bytes = "0.4.4"
+hyper = "0.12"
+futures = "0.1"
+http = "0.1"
+tokio = "0.1.8"
+
+[profile.release]
+lto = true
+codegen-units = 1
