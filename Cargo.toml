@@ -5,7 +5,7 @@ version = "2.0.0"
 authors = ["Thayne McCombs <astrothayne@gmail.com>"]
 license = "MIT"
 license-file = "LICENSE"
-repository = "https:://github.com/tmccombs/hyperfs"
+repository = "https://github.com/tmccombs/hyperfs"
 
 [dependencies]
 bytes = "0.4.4"
