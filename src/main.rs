@@ -1,58 +1,39 @@
-extern crate bytes;
-extern crate futures;
-extern crate http;
-extern crate hyper;
-extern crate tokio;
-
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
-use futures::Future;
-use hyper::rt;
-use hyper::service::service_fn;
+use futures_util::stream::StreamExt;
+use hyper::service::{make_service_fn, service_fn};
 use hyper::StatusCode;
-use hyper::{Body, Chunk, Request, Response, Server};
-use tokio::codec::{Decoder, FramedRead};
+use hyper::{Body, Error, Request, Response, Server};
+use http::Result;
+use tokio::codec::{FramedRead, BytesCodec};
 use tokio::fs::File;
-use tokio::io;
 
-fn handle_request(req: Request<Body>) -> impl Future<Item = Response<Body>, Error = http::Error> {
-    File::open(extract_path(&req))
-        .map(file_response)
-        .or_else(|_| status_response(StatusCode::NOT_FOUND))
+async fn handle_request(req: Request<Body>) -> Result<Response<Body>> {
+    match File::open(extract_path(&req)).await {
+        Ok(f) => file_response(f),
+        Err(_) => status_response(StatusCode::NOT_FOUND),
+    }
 }
 
-fn file_response(file: File) -> Response<Body> {
-    let stream = FramedRead::new(file, ChunkDecoder);
-    Response::new(Body::wrap_stream(stream))
+fn file_response(file: File) -> Result<Response<Body>> {
+    let stream = FramedRead::new(file, BytesCodec::new()).map(|r| {
+        r.map(|b| b.freeze())
+    });
+    Ok(Response::new(Body::wrap_stream(stream)))
 }
 
-fn status_response(status: StatusCode) -> http::Result<Response<Body>> {
+fn status_response(status: StatusCode) -> Result<Response<Body>> {
     Response::builder().status(status).body(Body::empty())
 }
 
 fn extract_path(req: &Request<Body>) -> PathBuf {
     // Remove the first character
-    PathBuf::from(req.uri().path().trim_left_matches('/'))
+    PathBuf::from(req.uri().path().trim_start_matches('/'))
 }
 
-struct ChunkDecoder;
-
-impl Decoder for ChunkDecoder {
-    type Item = Chunk;
-    type Error = io::Error;
-
-    fn decode(&mut self, buf: &mut bytes::BytesMut) -> Result<Option<Chunk>, io::Error> {
-        let len = buf.len();
-        if len > 0 {
-            Ok(Some(buf.take().freeze().into()))
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-fn main() {
+#[tokio::main]
+async fn main() {
     let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let port = std::env::args()
         .nth(1)
@@ -61,13 +42,17 @@ fn main() {
 
     let addr = SocketAddr::new(ip, port);
 
+    let make_svc = make_service_fn(|_| async {
+        Ok::<_, Error>(service_fn(handle_request))
+    });
+
     let server = Server::bind(&addr)
-        .serve(|| service_fn(handle_request))
-        .map_err(|e| {
-            eprintln!("Unable to start server: {}", e);
-        });
+        .serve(make_svc);
 
-    println!("Server is listening at http://{}", addr);
+    println!("Listening on http://{}", addr);
 
-    rt::run(server);
+
+    if let Err(e) = server.await {
+        eprintln!("Unable to start server: {}", e);
+    }
 }

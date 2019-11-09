@@ -4,15 +4,18 @@ description = "A simple HTTP server for static files"
 version = "2.0.0"
 authors = ["Thayne McCombs <astrothayne@gmail.com>"]
 license = "MIT"
-license-file = "LICENSE"
 repository = "https://github.com/tmccombs/hyperfs"
+edition = "2018"
 
 [dependencies]
-bytes = "0.4.4"
-hyper = "0.12"
-futures = "0.1"
-http = "0.1"
-tokio = "0.1.8"
+http = "0.1.18"
+tokio = "0.2.0-alpha.6"
+futures-util-preview = "=0.3.0-alpha.19"
+
+[dependencies.hyper]
+version = "0.13.0-alpha.4"
+features = ["unstable-stream"]
+
 
 [profile.release]
 lto = true
