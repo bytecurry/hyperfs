@@ -1,13 +1,13 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
-use futures_util::stream::StreamExt;
+use futures_util::stream::TryStreamExt;
+use http::Result;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::StatusCode;
 use hyper::{Body, Error, Request, Response, Server};
-use http::Result;
-use tokio::codec::{FramedRead, BytesCodec};
 use tokio::fs::File;
+use tokio_util::codec::{BytesCodec, FramedRead};
 
 async fn handle_request(req: Request<Body>) -> Result<Response<Body>> {
     match File::open(extract_path(&req)).await {
@@ -17,9 +17,7 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>> {
 }
 
 fn file_response(file: File) -> Result<Response<Body>> {
-    let stream = FramedRead::new(file, BytesCodec::new()).map(|r| {
-        r.map(|b| b.freeze())
-    });
+    let stream = FramedRead::new(file, BytesCodec::new()).map_ok(|b| b.freeze());
     Ok(Response::new(Body::wrap_stream(stream)))
 }
 
@@ -42,15 +40,11 @@ async fn main() {
 
     let addr = SocketAddr::new(ip, port);
 
-    let make_svc = make_service_fn(|_| async {
-        Ok::<_, Error>(service_fn(handle_request))
-    });
+    let make_svc = make_service_fn(|_| async { Ok::<_, Error>(service_fn(handle_request)) });
 
-    let server = Server::bind(&addr)
-        .serve(make_svc);
+    let server = Server::bind(&addr).serve(make_svc);
 
     println!("Listening on http://{}", addr);
-
 
     if let Err(e) = server.await {
         eprintln!("Unable to start server: {}", e);
