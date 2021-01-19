@@ -1,24 +1,30 @@
 [package]
 name = "hyperfs"
 description = "A simple HTTP server for static files"
-version = "2.1.0"
+version = "2.2.0"
 authors = ["Thayne McCombs <astrothayne@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/tmccombs/hyperfs"
 edition = "2018"
 
 [dependencies]
-hyper = "0.13"
 http = "0.2"
 futures-util = "0.3"
 
 [dependencies.tokio]
-version = "0.2"
-features = ["fs", "macros"]
+version = "1.0.2"
+features = ["rt-multi-thread", "fs", "macros"]
 
 [dependencies.tokio-util]
-version = "0.2"
+version = "0.6.1"
 features = ["codec"]
+
+[dependencies.hyper]
+version = "0.14.2"
+features = ["server", "http1", "stream", "tcp"]
+
+[features]
+h2 = ["hyper/http2"]
 
 [profile.release]
 lto = true

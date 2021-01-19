@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
@@ -5,7 +6,7 @@ use futures_util::stream::TryStreamExt;
 use http::Result;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::StatusCode;
-use hyper::{Body, Error, Request, Response, Server};
+use hyper::{Body, Request, Response, Server};
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
@@ -40,7 +41,7 @@ async fn main() {
 
     let addr = SocketAddr::new(ip, port);
 
-    let make_svc = make_service_fn(|_| async { Ok::<_, Error>(service_fn(handle_request)) });
+    let make_svc = make_service_fn(|_| async { Ok::<_, Infallible>(service_fn(handle_request)) });
 
     let server = Server::bind(&addr).serve(make_svc);
 
