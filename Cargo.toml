@@ -16,7 +16,7 @@ version = "1.0.2"
 features = ["rt-multi-thread", "fs", "macros"]
 
 [dependencies.tokio-util]
-version = "0.6.1"
+version = "0.7.3"
 features = ["codec"]
 
 [dependencies.hyper]
