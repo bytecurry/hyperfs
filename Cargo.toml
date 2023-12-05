@@ -8,23 +8,25 @@ repository = "https://github.com/tmccombs/hyperfs"
 edition = "2018"
 
 [dependencies]
-http = "0.2"
+http = "1.0"
+http-body-util = "0.1.0"
 futures-util = "0.3"
 
 [dependencies.tokio]
 version = "1.0.2"
-features = ["rt-multi-thread", "fs", "macros"]
+features = ["rt-multi-thread", "fs", "net", "macros"]
 
 [dependencies.tokio-util]
 version = "0.7.3"
-features = ["codec"]
+features = ["io"]
 
 [dependencies.hyper]
-version = "0.14.2"
-features = ["server", "http1", "stream", "tcp"]
+version = "1.0"
+features = ["server", "http1", "http2"]
 
-[features]
-h2 = ["hyper/http2"]
+[dependencies.hyper-util]
+version = "0.1"
+features = ["tokio", "server-auto"]
 
 [profile.release]
 lto = true

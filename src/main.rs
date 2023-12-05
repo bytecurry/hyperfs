@@ -1,38 +1,45 @@
-use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
-use futures_util::stream::TryStreamExt;
-use http::Result;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::StatusCode;
-use hyper::{Body, Request, Response, Server};
+use futures_util::{stream::MapOk, TryStreamExt};
+use http_body_util::{Either, Empty, StreamBody};
+use hyper::body::{Bytes, Incoming};
+use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::server::conn::auto;
 use tokio::fs::File;
-use tokio_util::codec::{BytesCodec, FramedRead};
+use tokio::net::TcpListener;
+use tokio_util::io::ReaderStream;
 
-async fn handle_request(req: Request<Body>) -> Result<Response<Body>> {
+type Frame = hyper::body::Frame<Bytes>;
+type Body = Either<StreamBody<MapOk<ReaderStream<File>, fn(Bytes) -> Frame>>, Empty<Bytes>>;
+
+async fn handle_request(req: Request<Incoming>) -> http::Result<Response<Body>> {
     match File::open(extract_path(&req)).await {
-        Ok(f) => file_response(f),
+        Ok(f) => Ok(file_response(f)),
         Err(_) => status_response(StatusCode::NOT_FOUND),
     }
 }
 
-fn file_response(file: File) -> Result<Response<Body>> {
-    let stream = FramedRead::new(file, BytesCodec::new()).map_ok(|b| b.freeze());
-    Ok(Response::new(Body::wrap_stream(stream)))
+fn file_response(file: File) -> Response<Body> {
+    let stream = ReaderStream::new(file);
+    Response::new(Body::Left(StreamBody::new(stream.map_ok(Frame::data))))
 }
 
-fn status_response(status: StatusCode) -> Result<Response<Body>> {
-    Response::builder().status(status).body(Body::empty())
+fn status_response(status: StatusCode) -> http::Result<Response<Body>> {
+    Response::builder()
+        .status(status)
+        .body(Body::Right(Empty::new()))
 }
 
-fn extract_path(req: &Request<Body>) -> PathBuf {
+fn extract_path(req: &Request<Incoming>) -> PathBuf {
     // Remove the first character
     PathBuf::from(req.uri().path().trim_start_matches('/'))
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let port = std::env::args()
         .nth(1)
@@ -41,13 +48,28 @@ async fn main() {
 
     let addr = SocketAddr::new(ip, port);
 
-    let make_svc = make_service_fn(|_| async { Ok::<_, Infallible>(service_fn(handle_request)) });
+    let svc = service_fn(handle_request);
 
-    let server = Server::bind(&addr).serve(make_svc);
+    let listener = match TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Unable to bind to 127.0.0.1:{}", port);
+            return Err(e.into());
+        }
+    };
 
     println!("Listening on http://{}", addr);
 
-    if let Err(e) = server.await {
-        eprintln!("Unable to start server: {}", e);
+    loop {
+        let (stream, _) = listener.accept().await?;
+
+        // TODO: gracefully handle SIGINT?
+        let io = TokioIo::new(stream);
+        tokio::task::spawn(async move {
+            let builder = auto::Builder::new(TokioExecutor::new());
+            if let Err(err) = builder.serve_connection(io, svc).await {
+                eprintln!("ERROR: {:?}", err);
+            }
+        });
     }
 }
