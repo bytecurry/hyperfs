@@ -1,11 +1,11 @@
 [package]
 name = "hyperfs"
 description = "A simple HTTP server for static files"
-version = "2.2.2"
+version = "3.0.0"
 authors = ["Thayne McCombs <astrothayne@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/tmccombs/hyperfs"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 http = "1.0"
